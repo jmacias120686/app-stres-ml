@@ -2,11 +2,15 @@
 from flask import Flask, request, jsonify
 import joblib
 import pandas as pd
+import os
 
 app = Flask(__name__)
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(BASE_DIR, "stress_model.pkl")
 # Cargar el modelo previamente entrenado
-model = joblib.load('stress_model.pkl')
+#model = joblib.load('stress_model.pkl')
+model = joblib.load(MODEL_PATH)
 
 # Mapeo de resultados
 STRESS_LEVELS = {0: 'LOW', 1: 'MEDIUM', 2: 'HIGH'}
@@ -50,4 +54,5 @@ def predict_stress():
 
 if __name__ == '__main__':
     # La API de Python correrá en el puerto 5000
-    app.run(port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
