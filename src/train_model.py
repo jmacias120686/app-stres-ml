@@ -1,4 +1,4 @@
-# train_model.py
+# src/train_model.py
 import pandas as pd
 from sqlalchemy import create_engine
 from sklearn.ensemble import RandomForestClassifier
@@ -6,50 +6,59 @@ import joblib
 import os
 from dotenv import load_dotenv
 
-# 1. Cargar la URL de la base de datos desde el archivo .env
-load_dotenv()
-DATABASE_URL_RAW = os.getenv('DATABASE_URL')
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(BASE_DIR, "stress_model.pkl")
 
-if not DATABASE_URL_RAW:
-    raise ValueError("No se encontró DATABASE_URL en el archivo .env")
 
-# LÍNEA CORREGIDA: Limpiar la URL para quitar '?schema=public' que causa error en psycopg2
-DATABASE_URL = DATABASE_URL_RAW.split('?')[0]
+def train_model():
+    load_dotenv()
 
-print("Conectando a PostgreSQL...")
-engine = create_engine(DATABASE_URL)
-# 2. Extraer los datos reales de la tabla DailyMetric
-# Nota: Prisma crea las tablas con comillas dobles (Case Sensitive) por defecto en Postgres
-query = """
-SELECT "heartRateAvg", "sleepHours", "steps", "screenTimeMinutes", 
-       "socialMediaMin", "moodScore", "perceivedStress" 
-FROM "DailyMetric";
-"""
+    DATABASE_URL_RAW = os.getenv("DATABASE_URL")
 
-print("Descargando datos de entrenamiento...")
-df = pd.read_sql(query, engine)
+    if not DATABASE_URL_RAW:
+        raise ValueError("No se encontró DATABASE_URL en el archivo .env o variables del entorno")
 
-print(f"✅ Se han extraído {len(df)} registros de la base de datos.")
+    DATABASE_URL = DATABASE_URL_RAW.split("?")[0]
 
-# 3. Regla lógica para generar la etiqueta de estrés basada en los datos extraídos
-# (0: LOW, 1: MEDIUM, 2: HIGH)
-def calculate_stress(row):
-    if row['sleepHours'] < 5 or row['perceivedStress'] >= 8 or row['heartRateAvg'] > 85:
-        return 2 # HIGH
-    elif row['sleepHours'] < 6.5 or row['perceivedStress'] >= 5:
-        return 1 # MEDIUM
-    return 0 # LOW
+    print("Conectando a PostgreSQL...", flush=True)
+    engine = create_engine(DATABASE_URL)
 
-df['stress_label'] = df.apply(calculate_stress, axis=1)
+    query = """
+    SELECT "heartRateAvg", "sleepHours", "steps", "screenTimeMinutes", 
+           "socialMediaMin", "moodScore", "perceivedStress" 
+    FROM "DailyMetric";
+    """
 
-# 4. Entrenar el modelo
-X = df.drop('stress_label', axis=1)
-y = df['stress_label']
+    print("Descargando datos de entrenamiento...", flush=True)
+    df = pd.read_sql(query, engine)
 
-print("Entrenando el modelo Random Forest...")
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X, y)
+    print(f"Se han extraído {len(df)} registros de la base de datos.", flush=True)
 
-# 5. Guardar el modelo
-joblib.dump(model, 'stress_model.pkl')
-print("✅ Modelo entrenado con éxito usando datos de PostgreSQL y guardado como 'stress_model.pkl'")
+    if df.empty:
+        raise ValueError("No hay datos en la tabla DailyMetric para entrenar el modelo")
+
+    def calculate_stress(row):
+        if row["sleepHours"] < 5 or row["perceivedStress"] >= 8 or row["heartRateAvg"] > 85:
+            return 2  # HIGH
+        elif row["sleepHours"] < 6.5 or row["perceivedStress"] >= 5:
+            return 1  # MEDIUM
+        return 0  # LOW
+
+    df["stress_label"] = df.apply(calculate_stress, axis=1)
+
+    X = df.drop("stress_label", axis=1)
+    y = df["stress_label"]
+
+    print("Entrenando el modelo Random Forest...", flush=True)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X, y)
+
+    joblib.dump(model, MODEL_PATH)
+
+    print(f"Modelo entrenado con éxito y guardado en: {MODEL_PATH}", flush=True)
+
+    return {
+        "message": "Modelo entrenado con éxito",
+        "records_used": int(len(df)),
+        "model_path": MODEL_PATH
+    }

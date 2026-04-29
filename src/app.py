@@ -1,9 +1,10 @@
 # src/app.py
 from flask import Flask, request, jsonify
-#import joblib
-#import pandas as pd
+import joblib
+import pandas as pd
 import os
 import traceback
+from train_model import train_model
 
 app = Flask(__name__)
 
@@ -19,12 +20,15 @@ STRESS_LEVELS = {
 }
 
 
-def load_model():
+def load_model(force_reload=False):
     global model
 
+    if force_reload:
+        model = None
+
     if model is None:
-        print("Cargando modelo desde:", MODEL_PATH)
-        print("Existe el modelo:", os.path.exists(MODEL_PATH))
+        print("Cargando modelo desde:", MODEL_PATH, flush=True)
+        print("Existe el modelo:", os.path.exists(MODEL_PATH), flush=True)
 
         if not os.path.exists(MODEL_PATH):
             raise FileNotFoundError(f"No se encontró stress_model.pkl en: {MODEL_PATH}")
@@ -108,7 +112,7 @@ def predict_stress():
         })
 
     except Exception as e:
-        print("Error en /predict:")
+        print("Error en /predict:", flush=True)
         traceback.print_exc()
 
         return jsonify({
@@ -116,6 +120,31 @@ def predict_stress():
         }), 500
 
 
+@app.route("/train", methods=["POST"])
+def train_endpoint():
+    try:
+        result = train_model()
+
+        # Recargar el modelo en memoria después de entrenar
+        load_model(force_reload=True)
+
+        return jsonify({
+            "success": True,
+            "message": "Modelo entrenado y recargado correctamente",
+            "details": result
+        })
+
+    except Exception as e:
+        print("Error en /train:", flush=True)
+        traceback.print_exc()
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))
+    print(f"Iniciando API Flask en puerto {port}", flush=True)
     app.run(host="0.0.0.0", port=port, debug=False)
